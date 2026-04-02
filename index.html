@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TOS Alert Formatter</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #00d4ff;
+            margin-bottom: 6px;
+            font-size: 1.6rem;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 12px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #16213e;
+            color: #e0e0e0;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+        }
+
+        textarea:focus { outline: none; border-color: #00d4ff; }
+
+        .btn-format {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #0f3460;
+            color: #00d4ff;
+            border: 1px solid #00d4ff;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .btn-format:hover { background: #1a4a7a; }
+
+        /* Results Panel */
+        #resultsPanel { display: none; margin-top: 20px; }
+        #resultsPanel.visible { display: block; }
+
+        .results-label {
+            font-size: 0.8rem;
+            color: #888;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Price option cards */
+        .price-card {
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            position: relative;
+        }
+
+        .price-card:hover { border-color: #555; background: #16213e; }
+
+        .price-card.selected {
+            border-color: #00d4ff;
+            background: #0f3460;
+        }
+
+        .price-card .card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .price-card .card-header .radio {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .price-card.selected .card-header .radio {
+            border-color: #00d4ff;
+        }
+
+        .price-card.selected .card-header .radio::after {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00d4ff;
+        }
+
+        .price-card .card-label {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .price-card .card-label .tag {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 6px;
+            font-weight: 400;
+        }
+
+        .tag-original { background: #333; color: #aaa; }
+        .tag-1c { background: #1b4332; color: #52b788; }
+        .tag-5c { background: #542e0a; color: #f4a236; }
+
+        .price-card .card-text {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            color: #ccc;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+
+        .price-card.selected .card-text { color: #fff; }
+
+        .price-card .copied-badge {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+            background: #28a745;
+            color: #fff;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .price-card .copied-badge.show { opacity: 1; }
+
+        /* OptionStrat button */
+        .btn-optionstrat {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-top: 6px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #1b4332;
+            color: #52b788;
+            border: 1px solid #52b788;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .btn-optionstrat:hover { background: #2d6a4f; }
+
+        /* Error display */
+        .error-msg {
+            color: #ff6b6b;
+            font-size: 0.85rem;
+            margin-top: 8px;
+            display: none;
+        }
+
+        .error-msg.visible { display: block; }
+
+        /* Examples */
+        .examples {
+            margin-top: 30px;
+            padding: 16px;
+            background: #16213e;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+
+        .examples h3 {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .example-item {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            color: #aaa;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            background: #1a1a2e;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            word-break: break-all;
+        }
+
+        .example-item:hover { background: #0f3460; color: #e0e0e0; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: #28a745;
+            color: #fff;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TOS Alert Formatter</h1>
+        <p class="subtitle">Paste an alert — it formats and copies automatically</p>
+
+        <form id="form" onsubmit="event.preventDefault(); processInput();">
+            <textarea id="userInput" placeholder="Paste trading alert here..."></textarea>
+            <button type="submit" class="btn-format">Format Alert</button>
+        </form>
+
+        <div class="error-msg" id="errorMsg"></div>
+
+        <div id="resultsPanel">
+            <p class="results-label">Select an option to copy</p>
+
+            <div class="price-card selected" data-option="original" onclick="selectCard(this)">
+                <div class="card-header">
+                    <div class="radio"></div>
+                    <span class="card-label">Original Price <span class="tag tag-original">as-is</span></span>
+                </div>
+                <div class="card-text" id="text-original"></div>
+                <div class="copied-badge" id="badge-original">Copied!</div>
+            </div>
+
+            <div class="price-card" data-option="plus1" onclick="selectCard(this)">
+                <div class="card-header">
+                    <div class="radio"></div>
+                    <span class="card-label">+1c Aggressive <span class="tag tag-1c">+$0.01</span></span>
+                </div>
+                <div class="card-text" id="text-plus1"></div>
+                <div class="copied-badge" id="badge-plus1">Copied!</div>
+            </div>
+
+            <div class="price-card" data-option="plus5" onclick="selectCard(this)">
+                <div class="card-header">
+                    <div class="radio"></div>
+                    <span class="card-label">+5c Aggressive <span class="tag tag-5c">+$0.05</span></span>
+                </div>
+                <div class="card-text" id="text-plus5"></div>
+                <div class="copied-badge" id="badge-plus5">Copied!</div>
+            </div>
+
+            <button class="btn-optionstrat" onclick="openOptionStrat()">Open in OptionStrat</button>
+        </div>
+
+        <div class="examples">
+            <h3>Click an example to try it:</h3>
+            <div class="example-item" onclick="tryExample(this)">#1462 NEW BOT +4 BUTTERFLY SPX 100 (Weeklys) 18 APR 26 5665/5680/5695 CALL @.57 CBOE</div>
+            <div class="example-item" onclick="tryExample(this)">#1461 SOLD -2 1/2 BACKRATIO SMCI 100 (Weeklys) 25 APR 26 42/46 PUT @.50 PHLX</div>
+            <div class="example-item" onclick="tryExample(this)">#1457 SOLD -1 WDAY 100 (Weeklys) 18 APR 26 245 CALL @1.50 CBOE</div>
+            <div class="example-item" onclick="tryExample(this)">BOT +1 BUTTERFLY NDX 100 (Weeklys) 6 JAN 25 21510/21560/21680 CALL @-.90 CBOE</div>
+            <div class="example-item" onclick="tryExample(this)">SOLD -1 BUTTERFLY NDX 100 (Weeklys) 6 JAN 25 21510/21560/21680 CALL @-1.65 CBOE</div>
+            <div class="example-item" onclick="tryExample(this)">#1111 BOT +1 DIAGONAL MSFT 100 17 APR 26/10 APR 26 400/385 CALL @-.75</div>
+            <div class="example-item" onclick="tryExample(this)">BUY +1 CONDOR MSFT 100 17 APR 26 450/455/460/465 CALL @.02</div>
+            <div class="example-item" onclick="tryExample(this)">BUY +1 1/3/2 ~BUTTERFLY MSFT 100 17 APR 26 450/455/460 CALL @-.01</div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Copied to clipboard!</div>
+
+    <script>
+    // =========================================================================
+    // 1. TOS ALERT FORMATTER
+    // =========================================================================
+
+    function formatAlert(input) {
+        let processed = input;
+
+        // Remove exchange codes
+        const exchanges = ['CBOE', 'PHLX', 'AMEX', 'ISE', 'BOX', 'NYSE', 'NASDAQ', 'BATS', 'MEMX', 'C2'];
+        exchanges.forEach(ex => {
+            processed = processed.replace(new RegExp('\\b' + ex + '\\b', 'g'), '');
+        });
+
+        // Remove standalone cr and db
+        processed = processed.replace(/\bcr\b/gi, '');
+        processed = processed.replace(/\bdb\b/gi, '');
+
+        // Standardize actions
+        processed = processed.replace(/\bBOT\b/g, 'BUY');
+        processed = processed.replace(/\bSOLD\b/g, 'SELL');
+
+        // Extract from BUY/SELL onwards
+        const buyIdx = processed.indexOf('BUY');
+        const sellIdx = processed.indexOf('SELL');
+        let idx = -1;
+        if (buyIdx > -1 && sellIdx > -1) idx = Math.min(buyIdx, sellIdx);
+        else if (buyIdx > -1) idx = buyIdx;
+        else if (sellIdx > -1) idx = sellIdx;
+
+        if (idx > -1) processed = processed.substring(idx);
+
+        // Remove + from quantity (2nd token)
+        const words = processed.split(' ');
+        if (words.length > 1) {
+            words[1] = words[1].replace(/\+/g, '');
+        }
+        processed = words.join(' ');
+
+        // Normalize whitespace
+        processed = processed.replace(/\s+/g, ' ').trim();
+
+        // Add LMT if missing
+        if (!processed.endsWith('LMT')) {
+            processed = processed + ' LMT';
+        }
+
+        return processed;
+    }
+
+    // =========================================================================
+    // 2. PRICE EXTRACTION & ADJUSTMENT
+    // =========================================================================
+
+    function extractPrice(order) {
+        const atIdx = order.indexOf('@');
+        if (atIdx === -1) return null;
+
+        let endIdx = order.indexOf(' ', atIdx);
+        if (endIdx === -1) endIdx = order.length;
+
+        const priceStr = order.substring(atIdx + 1, endIdx);
+        let normalized = priceStr;
+        if (normalized.startsWith('-.')) normalized = '-0' + normalized.substring(1);
+        else if (normalized.startsWith('.')) normalized = '0' + normalized;
+
+        const value = parseFloat(normalized);
+        if (isNaN(value)) return null;
+
+        return { priceStr, value, atIdx, endIdx };
+    }
+
+    function formatTosPrice(value) {
+        // Round to 2 decimals
+        const rounded = Math.round(value * 100) / 100;
+        const abs = Math.abs(rounded);
+        const sign = rounded < 0 ? '-' : '';
+
+        let formatted;
+        if (abs < 1) {
+            // Omit leading zero: .57, -.90
+            formatted = sign + '.' + abs.toFixed(2).substring(2);
+        } else {
+            formatted = rounded.toFixed(2);
+        }
+        return formatted;
+    }
+
+    function adjustPrice(order, cents) {
+        const priceInfo = extractPrice(order);
+        if (!priceInfo) return order;
+
+        const isBuy = /^(BUY|BOT)\b/i.test(order.trim());
+        const adjustment = isBuy ? cents : -cents;
+        const newValue = priceInfo.value + adjustment;
+        const newPriceStr = formatTosPrice(newValue);
+
+        return order.substring(0, priceInfo.atIdx + 1) + newPriceStr + order.substring(priceInfo.endIdx);
+    }
+
+    // =========================================================================
+    // 3. OPTIONSTRAT URL GENERATOR (ported from VBA)
+    // =========================================================================
+
+    function parseIsBuy(line) {
+        const upper = line.toUpperCase();
+        return upper.includes('BUY') || upper.includes('BOT');
+    }
+
+    function parseNetCost(line) {
+        const atIdx = line.indexOf('@');
+        if (atIdx === -1) return 0;
+
+        let costStr = line.substring(atIdx + 1);
+        const spaceIdx = costStr.indexOf(' ');
+        if (spaceIdx > -1) costStr = costStr.substring(0, spaceIdx);
+
+        costStr = costStr.replace(',', '.');
+        costStr = costStr.trim();
+
+        if (costStr.startsWith('-.')) costStr = '-0' + costStr.substring(1);
+        else if (costStr.startsWith('.')) costStr = '0' + costStr;
+
+        const val = parseFloat(costStr);
+        return isNaN(val) ? 0 : val;
+    }
+
+    const VALID_MONTHS = {
+        'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+        'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+    };
+
+    function monthIsValid(token) {
+        return token && VALID_MONTHS.hasOwnProperty(token.toUpperCase().substring(0, 3));
+    }
+
+    function monthNum(token) {
+        return VALID_MONTHS[token.toUpperCase().substring(0, 3)] || 0;
+    }
+
+    function makeDateCode(day, mon, yr) {
+        const d = parseInt(day, 10);
+        const m = monthNum(mon);
+        if (m === 0) return 'Error';
+
+        let y = parseInt(yr, 10);
+        if (yr.length === 4) y = y % 100;
+
+        const pad = n => n.toString().padStart(2, '0');
+        return pad(y) + pad(m) + pad(d);
+    }
+
+    function parseSingleLineStrategy(lineText) {
+        const tokens = lineText.trim().split(/\s+/);
+        let idx = 0;
+
+        const orderType = tokens[idx].toUpperCase();
+        idx++;
+
+        const totalQty = Math.abs(parseInt(tokens[idx], 10));
+        idx++;
+
+        let ratioStr = '';
+        let strategy = 'SIMPLE';
+
+        if (idx <= tokens.length - 1) {
+            let tokenVal = tokens[idx].toUpperCase();
+
+            if (tokenVal.includes('/') && !isNaN(parseInt(tokenVal))) {
+                // It's a ratio like "1/2" or "1/2/1"
+                ratioStr = tokens[idx];
+                idx++;
+                if (idx <= tokens.length - 1) {
+                    tokenVal = tokens[idx].toUpperCase();
+                    if (tokenVal.includes('~BUTTERFLY')) { strategy = '~BUTTERFLY'; idx++; }
+                    else if (tokenVal.includes('BUTTERFLY')) { strategy = 'BUTTERFLY'; idx++; }
+                    else if (tokenVal.includes('VERTICAL')) { strategy = 'VERTICAL'; idx++; }
+                    else if (tokenVal.includes('BACKRATIO')) { strategy = 'BACKRATIO'; idx++; }
+                    else { strategy = 'SIMPLE'; }
+                }
+                // ticker
+            } else if (tokenVal.includes('~BUTTERFLY')) { strategy = '~BUTTERFLY'; idx++; }
+            else if (tokenVal.includes('BUTTERFLY')) { strategy = 'BUTTERFLY'; idx++; }
+            else if (tokenVal.includes('VERTICAL')) { strategy = 'VERTICAL'; idx++; }
+            else if (tokenVal.includes('BACKRATIO')) { strategy = 'BACKRATIO'; idx++; }
+            else if (tokenVal.includes('DIAGONAL')) { strategy = 'DIAGONAL'; idx++; }
+            else if (tokenVal.includes('CALENDAR')) { strategy = 'DIAGONAL'; idx++; }
+            else if (tokenVal === 'CONDOR') { strategy = 'CONDOR'; idx++; }
+            else { strategy = 'SIMPLE'; }
+        }
+
+        const ticker = tokens[idx];
+        idx++;
+
+        // Scan forward to find date: numeric token followed by valid month
+        while (idx <= tokens.length - 1) {
+            if (!isNaN(parseInt(tokens[idx])) && idx + 2 <= tokens.length - 1 && monthIsValid(tokens[idx + 1])) {
+                break;
+            }
+            idx++;
+        }
+
+        const dayPart = tokens[idx];
+        const monPart = tokens[idx + 1];
+        const yrPart = tokens[idx + 2];
+        idx += 3;
+
+        // Diagonal/Calendar: "17 APR 26/10 APR 26" → yrPart = "26/10" (year1/day2 joined)
+        let dateCode, dateCode2;
+        if (yrPart && yrPart.includes('/')) {
+            const yrSlashParts = yrPart.split('/');
+            dateCode = makeDateCode(dayPart, monPart, yrSlashParts[0]);
+            const day2 = yrSlashParts[1];
+            const mon2 = tokens[idx];
+            const yr2  = tokens[idx + 1];
+            idx += 2;
+            dateCode2 = makeDateCode(day2, mon2, yr2);
+        } else {
+            dateCode  = makeDateCode(dayPart, monPart, yrPart);
+            dateCode2 = dateCode;
+        }
+
+        const strikeInfo = tokens[idx];
+        idx++;
+        const optType = tokens[idx].toUpperCase();
+        idx++;
+
+        let allPositions = [];
+        const isBuyOrder = (orderType === 'BUY' || orderType === 'BOT');
+
+        switch (strategy) {
+            case 'SIMPLE': {
+                const qty = isBuyOrder ? totalQty : -totalQty;
+                allPositions.push({ strike: parseFloat(strikeInfo), optType, qty });
+                break;
+            }
+            case 'VERTICAL': {
+                const parts = strikeInfo.split('/');
+                if (parts.length >= 2) {
+                    allPositions.push({
+                        strike: parseFloat(parts[0]), optType,
+                        qty: isBuyOrder ? totalQty : -totalQty
+                    });
+                    allPositions.push({
+                        strike: parseFloat(parts[1]), optType,
+                        qty: isBuyOrder ? -totalQty : totalQty
+                    });
+                } else {
+                    allPositions.push({
+                        strike: parseFloat(strikeInfo), optType,
+                        qty: isBuyOrder ? totalQty : -totalQty
+                    });
+                }
+                break;
+            }
+            case '~BUTTERFLY':
+            case 'BUTTERFLY': {
+                const parts = strikeInfo.split('/');
+                let rLow = 1, rMid = 2, rHigh = 1;
+                if (ratioStr) {
+                    const rTokens = ratioStr.split('/');
+                    if (rTokens.length === 3) {
+                        rLow = parseInt(rTokens[0]); rMid = parseInt(rTokens[1]); rHigh = parseInt(rTokens[2]);
+                    }
+                }
+                if (isBuyOrder) {
+                    allPositions.push({ strike: parseFloat(parts[1]), optType, qty: -rMid * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[0]), optType, qty: rLow * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[2]), optType, qty: rHigh * totalQty });
+                } else {
+                    allPositions.push({ strike: parseFloat(parts[0]), optType, qty: -rLow * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[1]), optType, qty: rMid * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[2]), optType, qty: -rHigh * totalQty });
+                }
+                break;
+            }
+            case 'BACKRATIO': {
+                const parts = strikeInfo.split('/');
+                let sMult = 1, lMult = 1;
+                if (ratioStr) {
+                    const rTokens = ratioStr.split('/');
+                    if (rTokens.length >= 2) {
+                        sMult = parseFloat(rTokens[0]); lMult = parseFloat(rTokens[1]);
+                    }
+                }
+                if (parts.length >= 2) {
+                    if (isBuyOrder) {
+                        allPositions.push({ strike: parseFloat(parts[0]), optType, qty: -sMult * totalQty });
+                        allPositions.push({ strike: parseFloat(parts[1]), optType, qty: lMult * totalQty });
+                    } else {
+                        allPositions.push({ strike: parseFloat(parts[0]), optType, qty: sMult * totalQty });
+                        allPositions.push({ strike: parseFloat(parts[1]), optType, qty: -lMult * totalQty });
+                    }
+                } else {
+                    allPositions.push({
+                        strike: parseFloat(strikeInfo), optType,
+                        qty: isBuyOrder ? totalQty : -totalQty
+                    });
+                }
+                break;
+            }
+            case 'CONDOR': {
+                // 4 legs: buy wing1, sell inner1, sell inner2, buy wing2
+                // BUY CONDOR:  +1 / -1 / -1 / +1
+                // SELL CONDOR: -1 / +1 / +1 / -1
+                const parts = strikeInfo.split('/');
+                if (parts.length >= 4) {
+                    const sign = isBuyOrder ? 1 : -1;
+                    allPositions.push({ strike: parseFloat(parts[0]), optType, qty:  sign * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[1]), optType, qty: -sign * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[2]), optType, qty: -sign * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[3]), optType, qty:  sign * totalQty });
+                } else {
+                    allPositions.push({ strike: parseFloat(strikeInfo), optType,
+                        qty: isBuyOrder ? totalQty : -totalQty });
+                }
+                break;
+            }
+            case 'DIAGONAL': {
+                // Two legs: different expiry dates AND different strikes
+                // Leg 1 uses dateCode, Leg 2 uses dateCode2
+                const parts = strikeInfo.split('/');
+                if (parts.length >= 2) {
+                    allPositions.push({
+                        strike: parseFloat(parts[0]), optType,
+                        qty: isBuyOrder ? totalQty : -totalQty,
+                        dateCode: dateCode
+                    });
+                    allPositions.push({
+                        strike: parseFloat(parts[1]), optType,
+                        qty: isBuyOrder ? -totalQty : totalQty,
+                        dateCode: dateCode2
+                    });
+                } else {
+                    allPositions.push({
+                        strike: parseFloat(strikeInfo), optType,
+                        qty: isBuyOrder ? totalQty : -totalQty,
+                        dateCode: dateCode
+                    });
+                }
+                break;
+            }
+            default: {
+                allPositions.push({
+                    strike: parseFloat(strikeInfo), optType,
+                    qty: isBuyOrder ? totalQty : -totalQty
+                });
+            }
+        }
+
+        return { ticker, dateCode, qtyTrades: totalQty, allPositions, strategy };
+    }
+
+    function distributeCostAmongLegs(allPositions, netCost, totalQty) {
+        const prices = new Array(allPositions.length).fill(0);
+        if (netCost === 0) return prices;
+
+        let assigned = false;
+        for (let i = 0; i < allPositions.length; i++) {
+            const qty = allPositions[i].qty;
+            if (!assigned) {
+                if ((netCost > 0 && qty > 0) || (netCost < 0 && qty < 0)) {
+                    prices[i] = Math.abs(netCost) / Math.abs(qty) * totalQty;
+                    assigned = true;
+                }
+            }
+        }
+        return prices;
+    }
+
+    function buildLegsString(ticker, dateCode, allPositions, prices) {
+        const parts = [];
+        for (let i = 0; i < allPositions.length; i++) {
+            const pos = allPositions[i];
+            const optChar = pos.optType[0].toUpperCase(); // C or P
+            const strike = pos.strike;
+            const qty = pos.qty;
+            const price = prices[i];
+
+            const priceStr = price === 0 ? '@0' : '@' + price.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+            const legDateCode = pos.dateCode || dateCode;  // per-leg date (diagonal) or shared date
+            const legStr = '.' + ticker + legDateCode + optChar + strike + 'x' + qty + priceStr;
+            parts.push(legStr);
+        }
+        return parts.join(',');
+    }
+
+    // Builds leg string for CONDOR: no x{qty}, no @{price}, sign as prefix
+    // Long leg: ".MSFT260406C450"   Short leg: "-.MSFT260406C450"
+    function buildCondorLegsString(ticker, dateCode, allPositions) {
+        return allPositions.map(pos => {
+            const optChar   = pos.optType[0].toUpperCase();
+            const legDate   = pos.dateCode || dateCode;
+            const legId     = '.' + ticker + legDate + optChar + pos.strike;
+            return pos.qty > 0 ? legId : '-' + legId;
+        }).join(',');
+    }
+
+    function optionStratURL(formattedOrder) {
+        const isBuy = parseIsBuy(formattedOrder);
+        let netCost = parseNetCost(formattedOrder);
+        if (!isBuy) netCost = -netCost;
+
+        const parsed = parseSingleLineStrategy(formattedOrder);
+
+        // CONDOR uses a specific URL path and simplified leg format
+        if (parsed.strategy === 'CONDOR') {
+            const optWord   = parsed.allPositions[0].optType[0].toLowerCase() === 'c' ? 'call' : 'put';
+            const direction = isBuy ? 'long' : 'short';
+            const path      = direction + '-' + optWord + '-condor';
+            const legs      = buildCondorLegsString(parsed.ticker, parsed.dateCode, parsed.allPositions);
+            return 'https://optionstrat.com/build/' + path + '/' + parsed.ticker + '/' + legs;
+        }
+
+        // All other strategies use the custom URL with prices
+        const legPrices = distributeCostAmongLegs(parsed.allPositions, netCost, parsed.qtyTrades);
+        const finalLegs = buildLegsString(parsed.ticker, parsed.dateCode, parsed.allPositions, legPrices);
+        return 'https://optionstrat.com/build/custom/' + parsed.ticker + '/' + finalLegs;
+    }
+
+    // =========================================================================
+    // 4. UI LOGIC
+    // =========================================================================
+
+    let currentResults = { original: '', plus1: '', plus5: '' };
+    let lastSelectedOption = 'original'; // remembers user's last chosen price option
+
+    function processInput() {
+        const input = document.getElementById('userInput').value.trim();
+        const errorEl = document.getElementById('errorMsg');
+        const panel = document.getElementById('resultsPanel');
+
+        errorEl.classList.remove('visible');
+        errorEl.textContent = '';
+
+        if (!input) {
+            errorEl.textContent = 'Please paste an alert first.';
+            errorEl.classList.add('visible');
+            panel.classList.remove('visible');
+            return;
+        }
+
+        try {
+            const formatted = formatAlert(input);
+
+            currentResults.original = formatted;
+            currentResults.plus1 = adjustPrice(formatted, 0.01);
+            currentResults.plus5 = adjustPrice(formatted, 0.05);
+
+            document.getElementById('text-original').textContent = currentResults.original;
+            document.getElementById('text-plus1').textContent = currentResults.plus1;
+            document.getElementById('text-plus5').textContent = currentResults.plus5;
+
+            panel.classList.add('visible');
+
+            // Auto-select the last used option (default: original) and copy
+            const targetCard = document.querySelector(`.price-card[data-option="${lastSelectedOption}"]`);
+            selectCard(targetCard);
+        } catch (e) {
+            errorEl.textContent = 'Error formatting alert: ' + e.message;
+            errorEl.classList.add('visible');
+            panel.classList.remove('visible');
+        }
+    }
+
+    function selectCard(card) {
+        // Deselect all
+        document.querySelectorAll('.price-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+
+        const option = card.dataset.option;
+        lastSelectedOption = option; // remember for next paste
+        const text = currentResults[option];
+        copyToClipboard(text, option);
+    }
+
+    async function copyToClipboard(text, option) {
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch {
+            // Fallback
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+
+        // Show badge on the card
+        const badge = document.getElementById('badge-' + option);
+        badge.classList.add('show');
+        setTimeout(() => badge.classList.remove('show'), 1500);
+
+        // Show toast
+        const toast = document.getElementById('toast');
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 1500);
+    }
+
+    function openOptionStrat() {
+        const selected = document.querySelector('.price-card.selected');
+        if (!selected) return;
+
+        const option = selected.dataset.option;
+        const text = currentResults[option];
+
+        try {
+            const url = optionStratURL(text);
+            window.open(url, '_blank');
+        } catch (e) {
+            const errorEl = document.getElementById('errorMsg');
+            errorEl.textContent = 'Error generating OptionStrat URL: ' + e.message;
+            errorEl.classList.add('visible');
+        }
+    }
+
+    function tryExample(el) {
+        document.getElementById('userInput').value = el.textContent;
+        processInput();
+    }
+
+    // Auto-process on paste: fires as soon as content lands in the textarea
+    document.getElementById('userInput').addEventListener('paste', function() {
+        // Wait one tick so pasted text is actually in the textarea value
+        setTimeout(processInput, 0);
+    });
+    </script>
+</body>
+</html>
