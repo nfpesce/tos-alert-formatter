@@ -326,8 +326,8 @@
             processed = processed.replace(new RegExp('\\b' + ex + '\\b', 'g'), '');
         });
 
-        processed = processed.replace(/\bcr\b/gi, '');
-        processed = processed.replace(/\bdb\b/gi, '');
+        processed = processed.replace(/(cr)\b/gi, '');
+        processed = processed.replace(/(db)\b/gi, '');
 
         processed = processed.replace(/\bBOT\b/g, 'BUY');
         processed = processed.replace(/\bSOLD\b/g, 'SELL');
