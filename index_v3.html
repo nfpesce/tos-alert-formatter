@@ -898,11 +898,17 @@
         container.innerHTML = '';
         if (!ticker || typeof TradingView === 'undefined') return;
 
+        // 3 months of daily candles (~65 trading days = 90 calendar days)
+        const nowSec  = Math.floor(Date.now() / 1000);
+        const fromSec = nowSec - (90 * 24 * 60 * 60);
+
         tvWidget = new TradingView.widget({
             autosize:          true,
             height:            640,
             symbol:            tvSymbol(ticker),
             interval:          interval,
+            from:              fromSec,
+            to:                nowSec,
             timezone:          'America/New_York',
             theme:             'dark',
             style:             '1',
