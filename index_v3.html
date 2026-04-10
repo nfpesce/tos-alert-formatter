@@ -903,7 +903,6 @@
             height:            640,
             symbol:            tvSymbol(ticker),
             interval:          interval,
-            range:             '3M',
             timezone:          'America/New_York',
             theme:             'dark',
             style:             '1',
@@ -917,12 +916,12 @@
                 {
                     id: 'MAExp@tv-basicstudies',
                     inputs: { length: 8 },
-                    overrides: { 'Plot.color': '#00d4ff', 'Plot.linewidth': 2 }
+                    overrides: { 'plot.color': '#00d4ff', 'plot.linewidth': 2 }
                 },
                 {
                     id: 'MAExp@tv-basicstudies',
                     inputs: { length: 21 },
-                    overrides: { 'Plot.color': '#ffffff', 'Plot.linewidth': 2 }
+                    overrides: { 'plot.color': '#ffffff', 'plot.linewidth': 2 }
                 },
             ],
         });
