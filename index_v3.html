@@ -188,6 +188,25 @@
         .btn-optionstrat:hover { background: #2d6a4f; }
         .btn-optionstrat.loading { opacity: 0.6; cursor: wait; }
 
+        /* TradingView full chart button */
+        .btn-tv-chart {
+            display: block;
+            width: 100%;
+            margin-top: 8px;
+            padding: 10px;
+            background: #6b21a8;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            text-align: center;
+            text-decoration: none;
+        }
+        .btn-tv-chart:hover { background: #7e22ce; }
+
         /* TradingView chart panel */
         #chartPanel { margin-top: 10px; }
 
@@ -323,6 +342,8 @@
             </div>
 
             <button class="btn-optionstrat" id="btnOptionStrat" onclick="openOptionStrat()">Open in OptionStrat</button>
+
+            <a class="btn-tv-chart" id="btnTVChart" href="#" target="_blank" rel="noopener" style="display:none;" onclick="return openTVChart()">Open in TradingView</a>
 
             <div id="chartPanel" style="display:none;">
                 <div class="tv-timeframe-btns">
@@ -982,9 +1003,11 @@
             // Mostrar y cargar gráfico DESPUÉS del clipboard (setTimeout encola al final del event loop)
             if (currentTicker) {
                 document.getElementById('chartPanel').style.display = 'block';
+                document.getElementById('btnTVChart').style.display = 'block';
                 setTimeout(() => renderChart(currentTicker, currentInterval), 0);
             } else {
                 document.getElementById('chartPanel').style.display = 'none';
+                document.getElementById('btnTVChart').style.display = 'none';
             }
         } catch (e) {
             errorEl.textContent = 'Error formatting alert: ' + e.message;
@@ -1024,6 +1047,13 @@
         const toast = document.getElementById('toast');
         toast.classList.add('show');
         setTimeout(() => toast.classList.remove('show'), 1500);
+    }
+
+    function openTVChart() {
+        if (!currentTicker) return false;
+        const sym = tvSymbol(currentTicker);
+        window.open('https://www.tradingview.com/chart/d7aJHJFe/?symbol=' + encodeURIComponent(sym), '_blank', 'noopener');
+        return false;
     }
 
     async function openOptionStrat() {
