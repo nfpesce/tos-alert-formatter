@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TOS Alert Formatter v2</title>
+    <title>TOS Alert Formatter v3</title>
+    <script src="https://s3.tradingview.com/tv.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -187,6 +188,32 @@
         .btn-optionstrat:hover { background: #2d6a4f; }
         .btn-optionstrat.loading { opacity: 0.6; cursor: wait; }
 
+        /* TradingView chart panel */
+        #chartPanel { margin-top: 10px; }
+
+        .tv-timeframe-btns {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .tv-tf-btn {
+            padding: 4px 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            background: #16213e;
+            color: #aaa;
+            border: 1px solid #333;
+            border-radius: 5px;
+            transition: border-color 0.15s, color 0.15s;
+        }
+
+        .tv-tf-btn:hover { border-color: #00d4ff; color: #e0e0e0; }
+        .tv-tf-btn.active { border-color: #00d4ff; color: #00d4ff; }
+
+        #tvContainer { width: 100%; height: 640px; }
+
         /* Error display */
         .error-msg {
             color: #ff6b6b;
@@ -255,7 +282,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>TOS Alert Formatter <small style="font-size:0.6em;color:#888">v2</small></h1>
+        <h1>TOS Alert Formatter <small style="font-size:0.6em;color:#888">v3</small></h1>
         <p class="subtitle">Paste an alert — it formats and copies automatically</p>
 
         <form id="form" onsubmit="event.preventDefault(); processInput();">
@@ -296,6 +323,16 @@
             </div>
 
             <button class="btn-optionstrat" id="btnOptionStrat" onclick="openOptionStrat()">Open in OptionStrat</button>
+
+            <div id="chartPanel" style="display:none;">
+                <div class="tv-timeframe-btns">
+                    <button class="tv-tf-btn active" onclick="setChartInterval('D')">D</button>
+                    <button class="tv-tf-btn" onclick="setChartInterval('30')">30m</button>
+                    <button class="tv-tf-btn" onclick="setChartInterval('15')">15m</button>
+                    <button class="tv-tf-btn" onclick="setChartInterval('5')">5m</button>
+                </div>
+                <div id="tvContainer"></div>
+            </div>
         </div>
 
         <div class="examples">
@@ -840,6 +877,67 @@
 
     let currentResults = { original: '', plus1: '', plus5: '' };
     let lastSelectedOption = 'original';
+    let currentTicker = '';
+    let currentInterval = 'D';
+    let tvWidget = null;
+
+    const TV_SYMBOL_MAP = {
+        'SPX':  'SP:SPX',  'SPXW': 'SP:SPX',
+        'NDX':  'NASDAQ:NDX',
+        'RUT':  'TVC:RUT',
+        'DJX':  'DJ:DJI',
+    };
+
+    function tvSymbol(ticker) {
+        return TV_SYMBOL_MAP[ticker.toUpperCase()] || ticker.toUpperCase();
+    }
+
+    function renderChart(ticker, interval) {
+        const container = document.getElementById('tvContainer');
+        container.innerHTML = '';
+        if (!ticker || typeof TradingView === 'undefined') return;
+
+        // Unique ID cada render → fuerza gráfico fresco sin estado cacheado en localStorage
+        const uniqueId = 'tv_' + Date.now();
+        const innerDiv = document.createElement('div');
+        innerDiv.id = uniqueId;
+        innerDiv.style.height = '100%';
+        container.appendChild(innerDiv);
+
+        const nowSec  = Math.floor(Date.now() / 1000);
+        const fromSec = nowSec - (90 * 24 * 60 * 60);
+
+        tvWidget = new TradingView.widget({
+            autosize:          true,
+            height:            640,
+            symbol:            tvSymbol(ticker),
+            interval:          interval,
+            from:              fromSec,
+            to:                nowSec,
+            timezone:          'America/New_York',
+            theme:             'dark',
+            style:             '1',
+            locale:            'en',
+            hide_top_toolbar:  false,
+            hide_legend:       false,
+            hide_volume:       true,
+            save_image:        false,
+            container_id:      uniqueId,
+            studies: [
+                { id: 'MAExp@tv-basicstudies', inputs: { length: 8  }, overrides: { 'plot.color': '#00d4ff', 'plot.linewidth': 2 } },
+                { id: 'MAExp@tv-basicstudies', inputs: { length: 21 }, overrides: { 'plot.color': '#ffffff', 'plot.linewidth': 2 } },
+            ],
+        });
+    }
+
+    function setChartInterval(interval) {
+        currentInterval = interval;
+        document.querySelectorAll('.tv-tf-btn').forEach(btn => {
+            const btnInterval = btn.textContent === 'D' ? 'D' : btn.textContent.replace('m', '');
+            btn.classList.toggle('active', btnInterval === interval);
+        });
+        if (currentTicker) renderChart(currentTicker, currentInterval);
+    }
 
     function processInput() {
         const input = document.getElementById('userInput').value.trim();
@@ -863,6 +961,12 @@
             currentResults.plus1 = adjustPrice(formatted, 0.01);
             currentResults.plus5 = adjustPrice(formatted, 0.05);
 
+            // Extract ticker for chart (síncrono, no bloquea clipboard)
+            try {
+                const parsed = parseSingleLineStrategy(formatted);
+                currentTicker = parsed.ticker || '';
+            } catch { currentTicker = ''; }
+
             document.getElementById('text-original').textContent = currentResults.original;
             document.getElementById('text-plus1').textContent = currentResults.plus1;
             document.getElementById('text-plus5').textContent = currentResults.plus5;
@@ -870,7 +974,15 @@
             panel.classList.add('visible');
 
             const targetCard = document.querySelector(`.price-card[data-option="${lastSelectedOption}"]`);
-            selectCard(targetCard);
+            selectCard(targetCard);  // clipboard se copia aquí
+
+            // Mostrar y cargar gráfico DESPUÉS del clipboard (setTimeout encola al final del event loop)
+            if (currentTicker) {
+                document.getElementById('chartPanel').style.display = 'block';
+                setTimeout(() => renderChart(currentTicker, currentInterval), 0);
+            } else {
+                document.getElementById('chartPanel').style.display = 'none';
+            }
         } catch (e) {
             errorEl.textContent = 'Error formatting alert: ' + e.message;
             errorEl.classList.add('visible');
