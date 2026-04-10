@@ -882,8 +882,7 @@
     let tvWidget = null;
 
     const TV_SYMBOL_MAP = {
-        'SPX':  'SP:SPX',
-        'SPXW': 'SP:SPX',
+        'SPX':  'SP:SPX',  'SPXW': 'SP:SPX',
         'NDX':  'NASDAQ:NDX',
         'RUT':  'TVC:RUT',
         'DJX':  'DJ:DJI',
@@ -898,15 +897,13 @@
         container.innerHTML = '';
         if (!ticker || typeof TradingView === 'undefined') return;
 
-        // Unique ID cada render → evita que TradingView cargue estado guardado en
-        // localStorage (que sobreescribiría los colores de las EMAs)
+        // Unique ID cada render → fuerza gráfico fresco sin estado cacheado en localStorage
         const uniqueId = 'tv_' + Date.now();
         const innerDiv = document.createElement('div');
         innerDiv.id = uniqueId;
         innerDiv.style.height = '100%';
         container.appendChild(innerDiv);
 
-        // 3 months of daily candles (~65 trading days = 90 calendar days)
         const nowSec  = Math.floor(Date.now() / 1000);
         const fromSec = nowSec - (90 * 24 * 60 * 60);
 
@@ -927,16 +924,8 @@
             save_image:        false,
             container_id:      uniqueId,
             studies: [
-                {
-                    id: 'MAExp@tv-basicstudies',
-                    inputs: { length: 8 },
-                    overrides: { 'plot.color': '#00d4ff', 'plot.linewidth': 2 }
-                },
-                {
-                    id: 'MAExp@tv-basicstudies',
-                    inputs: { length: 21 },
-                    overrides: { 'plot.color': '#ffffff', 'plot.linewidth': 2 }
-                },
+                { id: 'MAExp@tv-basicstudies', inputs: { length: 8  }, overrides: { 'plot.color': '#00d4ff', 'plot.linewidth': 2 } },
+                { id: 'MAExp@tv-basicstudies', inputs: { length: 21 }, overrides: { 'plot.color': '#ffffff', 'plot.linewidth': 2 } },
             ],
         });
     }
@@ -944,7 +933,8 @@
     function setChartInterval(interval) {
         currentInterval = interval;
         document.querySelectorAll('.tv-tf-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.textContent.replace('m','') === interval || btn.textContent === interval);
+            const btnInterval = btn.textContent === 'D' ? 'D' : btn.textContent.replace('m', '');
+            btn.classList.toggle('active', btnInterval === interval);
         });
         if (currentTicker) renderChart(currentTicker, currentInterval);
     }
