@@ -358,6 +358,9 @@
     function formatAlert(input) {
         let processed = input;
 
+        // Normalize futures tickers: /GCM26:XCEC → GCM2026, /OG2J26:XCEC → OG2J2026
+        processed = processed.replace(/\/([A-Z][A-Z0-9]*)(\d{2})(?::[A-Z]{1,5})?/g, '$120$2');
+
         const exchanges = ['CBOE', 'PHLX', 'AMEX', 'ISE', 'BOX', 'NYSE', 'NASDAQ', 'BATS', 'MEMX', 'C2'];
         exchanges.forEach(ex => {
             processed = processed.replace(new RegExp('\\b' + ex + '\\b', 'g'), '');
