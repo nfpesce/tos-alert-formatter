@@ -192,20 +192,21 @@
         .btn-tv-chart {
             display: block;
             width: 100%;
-            margin-top: 8px;
-            padding: 10px;
-            background: #6b21a8;
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-size: 0.95rem;
+            padding: 12px;
+            margin-top: 6px;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
+            background: #2d1b4e;
+            color: #c084fc;
+            border: 1px solid #c084fc;
+            border-radius: 8px;
             transition: background 0.2s;
             text-align: center;
             text-decoration: none;
+            box-sizing: border-box;
         }
-        .btn-tv-chart:hover { background: #7e22ce; }
+        .btn-tv-chart:hover { background: #3d2466; }
 
         /* TradingView chart panel */
         #chartPanel { margin-top: 10px; }
@@ -1001,13 +1002,20 @@
             selectCard(targetCard);  // clipboard se copia aquí
 
             // Mostrar y cargar gráfico DESPUÉS del clipboard (setTimeout encola al final del event loop)
+            const INDEX_TICKERS = new Set(['SPX','SPXW','NDX','RUT','DJX']);
+            const isFutures = /\/[A-Z]/.test(input);
+            const isIndex = INDEX_TICKERS.has((currentTicker || '').toUpperCase());
+            const showWidget = currentTicker && !isFutures && !isIndex;
             if (currentTicker) {
-                document.getElementById('chartPanel').style.display = 'block';
                 document.getElementById('btnTVChart').style.display = 'block';
+            } else {
+                document.getElementById('btnTVChart').style.display = 'none';
+            }
+            if (showWidget) {
+                document.getElementById('chartPanel').style.display = 'block';
                 setTimeout(() => renderChart(currentTicker, currentInterval), 0);
             } else {
                 document.getElementById('chartPanel').style.display = 'none';
-                document.getElementById('btnTVChart').style.display = 'none';
             }
         } catch (e) {
             errorEl.textContent = 'Error formatting alert: ' + e.message;
