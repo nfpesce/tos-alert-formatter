@@ -327,7 +327,7 @@
             <div class="price-card" data-option="plus1" onclick="selectCard(this)">
                 <div class="card-header">
                     <div class="radio"></div>
-                    <span class="card-label">+1c Aggressive <span class="tag tag-1c">+$0.01</span></span>
+                    <span class="card-label">+1c Aggressive <span class="tag tag-1c" id="tag-plus1">+$0.01</span></span>
                 </div>
                 <div class="card-text" id="text-plus1"></div>
                 <div class="copied-badge" id="badge-plus1">Copied!</div>
@@ -336,7 +336,7 @@
             <div class="price-card" data-option="plus5" onclick="selectCard(this)">
                 <div class="card-header">
                     <div class="radio"></div>
-                    <span class="card-label">+5c Aggressive <span class="tag tag-5c">+$0.05</span></span>
+                    <span class="card-label">+5c Aggressive <span class="tag tag-5c" id="tag-plus5">+$0.05</span></span>
                 </div>
                 <div class="card-text" id="text-plus5"></div>
                 <div class="copied-badge" id="badge-plus5">Copied!</div>
@@ -995,6 +995,20 @@
             document.getElementById('text-original').textContent = currentResults.original;
             document.getElementById('text-plus1').textContent = currentResults.plus1;
             document.getElementById('text-plus5').textContent = currentResults.plus5;
+
+            // Update delta badges to reflect actual price change
+            (function() {
+                const orig = extractPrice(currentResults.original);
+                const p1   = extractPrice(currentResults.plus1);
+                const p5   = extractPrice(currentResults.plus5);
+                function deltaLabel(origVal, adjVal) {
+                    const d = Math.round((adjVal - origVal) * 100) / 100;
+                    const sign = d >= 0 ? '+' : '-';
+                    return sign + '$' + Math.abs(d).toFixed(2);
+                }
+                if (orig && p1) document.getElementById('tag-plus1').textContent = deltaLabel(orig.value, p1.value);
+                if (orig && p5) document.getElementById('tag-plus5').textContent = deltaLabel(orig.value, p5.value);
+            })();
 
             panel.classList.add('visible');
 
