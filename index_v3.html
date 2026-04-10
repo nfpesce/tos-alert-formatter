@@ -898,6 +898,14 @@
         container.innerHTML = '';
         if (!ticker || typeof TradingView === 'undefined') return;
 
+        // Unique ID cada render → evita que TradingView cargue estado guardado en
+        // localStorage (que sobreescribiría los colores de las EMAs)
+        const uniqueId = 'tv_' + Date.now();
+        const innerDiv = document.createElement('div');
+        innerDiv.id = uniqueId;
+        innerDiv.style.height = '100%';
+        container.appendChild(innerDiv);
+
         // 3 months of daily candles (~65 trading days = 90 calendar days)
         const nowSec  = Math.floor(Date.now() / 1000);
         const fromSec = nowSec - (90 * 24 * 60 * 60);
@@ -917,7 +925,7 @@
             hide_legend:       false,
             hide_volume:       true,
             save_image:        false,
-            container_id:      'tvContainer',
+            container_id:      uniqueId,
             studies: [
                 {
                     id: 'MAExp@tv-basicstudies',
