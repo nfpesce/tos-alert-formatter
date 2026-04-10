@@ -212,7 +212,7 @@
         .tv-tf-btn:hover { border-color: #00d4ff; color: #e0e0e0; }
         .tv-tf-btn.active { border-color: #00d4ff; color: #00d4ff; }
 
-        #tvContainer { width: 100%; height: 320px; }
+        #tvContainer { width: 100%; height: 640px; }
 
         /* Error display */
         .error-msg {
@@ -900,7 +900,7 @@
 
         tvWidget = new TradingView.widget({
             autosize:          true,
-            height:            320,
+            height:            640,
             symbol:            tvSymbol(ticker),
             interval:          interval,
             range:             '3M',
@@ -910,11 +910,20 @@
             locale:            'en',
             hide_top_toolbar:  false,
             hide_legend:       false,
+            hide_volume:       true,
             save_image:        false,
             container_id:      'tvContainer',
             studies: [
-                { id: 'MAExp@tv-basicstudies', inputs: { length: 8  } },
-                { id: 'MAExp@tv-basicstudies', inputs: { length: 21 } },
+                {
+                    id: 'MAExp@tv-basicstudies',
+                    inputs: { length: 8 },
+                    overrides: { 'Plot.color': '#00d4ff', 'Plot.linewidth': 2 }
+                },
+                {
+                    id: 'MAExp@tv-basicstudies',
+                    inputs: { length: 21 },
+                    overrides: { 'Plot.color': '#ffffff', 'Plot.linewidth': 2 }
+                },
             ],
         });
     }
