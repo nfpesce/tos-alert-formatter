@@ -306,7 +306,7 @@
         <p class="subtitle">Paste an alert — it formats and copies automatically</p>
 
         <form id="form" onsubmit="event.preventDefault(); processInput();">
-            <textarea id="userInput" placeholder="Paste trading alert here..."></textarea>
+            <textarea id="userInput" placeholder="Paste trading alert here..." onfocus="this.select()"></textarea>
             <button type="submit" class="btn-format">Format Alert</button>
         </form>
 
