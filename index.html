@@ -208,6 +208,26 @@
         }
         .btn-tv-chart:hover { background: #3d2466; }
 
+        /* TOS Chart Strategy button */
+        .btn-tos-chart {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-top: 6px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #2e1a0e;
+            color: #cd853f;
+            border: 1px solid #cd853f;
+            border-radius: 8px;
+            transition: background 0.2s;
+            text-align: center;
+            text-decoration: none;
+            box-sizing: border-box;
+        }
+        .btn-tos-chart:hover { background: #3d2410; }
+
         /* TradingView chart panel */
         #chartPanel { margin-top: 10px; }
 
@@ -355,6 +375,8 @@
                 </div>
                 <div id="tvContainer"></div>
             </div>
+
+            <button class="btn-tos-chart" id="btnTOSChart" style="display:none;" onclick="copyTOSChartStrategy()">Copy Strategy for TOS Chart</button>
         </div>
 
         <div class="examples">
@@ -926,8 +948,35 @@
     let currentResults = { original: '', plus1: '', plus5: '' };
     let lastSelectedOption = 'original';
     let currentTicker = '';
+    let currentParsed = null;
     let currentInterval = 'D';
     let tvWidget = null;
+
+    function buildTOSChartString(parsed) {
+        if (!parsed || !parsed.allPositions || !parsed.allPositions.length) return '';
+        return parsed.allPositions.map(pos => {
+            const sign    = pos.qty >= 0 ? '+' : '-';
+            const absQty  = Math.abs(pos.qty);
+            const mult    = absQty > 1 ? absQty + '*' : '';
+            const optChar = pos.optType[0].toUpperCase();
+            const legDate = pos.dateCode || parsed.dateCode;
+            return sign + mult + '.' + parsed.ticker + legDate + optChar + pos.strike;
+        }).join(' ');
+    }
+
+    async function copyTOSChartStrategy() {
+        const str = buildTOSChartString(currentParsed);
+        if (!str) return;
+        try { await navigator.clipboard.writeText(str); } catch(e) {
+            const ta = document.createElement('textarea');
+            ta.value = str; document.body.appendChild(ta); ta.select();
+            document.execCommand('copy'); document.body.removeChild(ta);
+        }
+        const btn = document.getElementById('btnTOSChart');
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
 
     const TV_SYMBOL_MAP = {
         'SPX':  'SP:SPX',  'SPXW': 'SP:SPX',
@@ -1009,11 +1058,12 @@
             currentResults.plus1 = adjustPrice(formatted, 0.01);
             currentResults.plus5 = adjustPrice(formatted, 0.05);
 
-            // Extract ticker for chart (síncrono, no bloquea clipboard)
+            // Extract ticker and parsed strategy for chart + TOS copy
             try {
                 const parsed = parseSingleLineStrategy(formatted);
                 currentTicker = parsed.ticker || '';
-            } catch { currentTicker = ''; }
+                currentParsed = parsed;
+            } catch { currentTicker = ''; currentParsed = null; }
 
             document.getElementById('text-original').textContent = currentResults.original;
             document.getElementById('text-plus1').textContent = currentResults.plus1;
@@ -1043,11 +1093,9 @@
             const isFutures = /(?:^|\s)\/[A-Z]/.test(input);
             const isIndex = INDEX_TICKERS.has((currentTicker || '').toUpperCase());
             const showWidget = currentTicker && !isFutures && !isIndex;
-            if (currentTicker) {
-                document.getElementById('btnTVChart').style.display = 'block';
-            } else {
-                document.getElementById('btnTVChart').style.display = 'none';
-            }
+            const hasTicker = !!currentTicker;
+            document.getElementById('btnTVChart').style.display   = hasTicker ? 'block' : 'none';
+            document.getElementById('btnTOSChart').style.display  = currentParsed ? 'block' : 'none';
             if (showWidget) {
                 document.getElementById('chartPanel').style.display = 'block';
                 setTimeout(() => renderChart(currentTicker, currentInterval), 0);
