@@ -1040,7 +1040,7 @@
 
             // Mostrar y cargar gráfico DESPUÉS del clipboard (setTimeout encola al final del event loop)
             const INDEX_TICKERS = new Set(['SPX','SPXW','NDX','RUT','DJX']);
-            const isFutures = /\/[A-Z]/.test(input);
+            const isFutures = /(?:^|\s)\/[A-Z]/.test(input);
             const isIndex = INDEX_TICKERS.has((currentTicker || '').toUpperCase());
             const showWidget = currentTicker && !isFutures && !isIndex;
             if (currentTicker) {
