@@ -366,6 +366,7 @@
             <div class="example-item" onclick="tryExample(this)">SOLD -1 BUTTERFLY NDX 100 (Weeklys) 6 JAN 25 21510/21560/21680 CALL @-1.65 CBOE</div>
             <div class="example-item" onclick="tryExample(this)">#1111 BOT +1 DIAGONAL MSFT 100 17 APR 26/10 APR 26 400/385 CALL @-.75</div>
             <div class="example-item" onclick="tryExample(this)">BUY +1 CONDOR MSFT 100 17 APR 26 450/455/460/465 CALL @.02</div>
+            <div class="example-item" onclick="tryExample(this)">BOT +1 IRON CONDOR SPY 100 (Weeklys) 20 APR 26 713/714/712/711 CALL/PUT @.84</div>
             <div class="example-item" onclick="tryExample(this)">BUY +1 1/3/2 ~BUTTERFLY MSFT 100 17 APR 26 450/455/460 CALL @-.01</div>
         </div>
     </div>
@@ -551,6 +552,7 @@
             else if (tokenVal.includes('BACKRATIO')) { strategy = 'BACKRATIO'; idx++; }
             else if (tokenVal.includes('DIAGONAL')) { strategy = 'DIAGONAL'; idx++; }
             else if (tokenVal.includes('CALENDAR')) { strategy = 'DIAGONAL'; idx++; }
+            else if (tokenVal === 'IRON' && tokens[idx + 1] && tokens[idx + 1].toUpperCase() === 'CONDOR') { strategy = 'IRON_CONDOR'; idx += 2; }
             else if (tokenVal === 'CONDOR') { strategy = 'CONDOR'; idx++; }
             else { strategy = 'SIMPLE'; }
         }
@@ -657,6 +659,21 @@
                     allPositions.push({ strike: parseFloat(parts[1]), optType, qty: -sign * totalQty });
                     allPositions.push({ strike: parseFloat(parts[2]), optType, qty: -sign * totalQty });
                     allPositions.push({ strike: parseFloat(parts[3]), optType, qty:  sign * totalQty });
+                } else {
+                    allPositions.push({ strike: parseFloat(strikeInfo), optType, qty: isBuyOrder ? totalQty : -totalQty });
+                }
+                break;
+            }
+            case 'IRON_CONDOR': {
+                // TOS: A/B/C/D CALL/PUT  →  A=callSell, B=callBuy, C=putSell, D=putBuy
+                // URL order: putBuy(+), putSell(-), callSell(-), callBuy(+)
+                const parts = strikeInfo.split('/');
+                if (parts.length >= 4) {
+                    const sign = isBuyOrder ? 1 : -1;
+                    allPositions.push({ strike: parseFloat(parts[3]), optType: 'PUT',  qty:  sign * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[2]), optType: 'PUT',  qty: -sign * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[0]), optType: 'CALL', qty: -sign * totalQty });
+                    allPositions.push({ strike: parseFloat(parts[1]), optType: 'CALL', qty:  sign * totalQty });
                 } else {
                     allPositions.push({ strike: parseFloat(strikeInfo), optType, qty: isBuyOrder ? totalQty : -totalQty });
                 }
@@ -876,6 +893,12 @@
             const path      = direction + '-' + optWord + '-condor';
             const legs      = buildCondorLegsString(parsed.ticker, parsed.dateCode, parsed.allPositions);
             return 'https://optionstrat.com/build/' + path + '/' + parsed.ticker + '/' + legs;
+        }
+
+        // IRON CONDOR: mixed PUT+CALL legs, fixed URL path
+        if (parsed.strategy === 'IRON_CONDOR') {
+            const legs = buildCondorLegsString(parsed.ticker, parsed.dateCode, parsed.allPositions);
+            return 'https://optionstrat.com/build/iron-condor/' + parsed.ticker + '/' + legs;
         }
 
         // Try B-S distribution: fetch stock price, calibrate IV, distribute
