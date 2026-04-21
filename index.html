@@ -656,10 +656,12 @@
         const ticker = tokens[idx];
         idx++;
 
+        let isWeekly = false;
         while (idx <= tokens.length - 1) {
             if (!isNaN(parseInt(tokens[idx])) && idx + 2 <= tokens.length - 1 && monthIsValid(tokens[idx + 1])) {
                 break;
             }
+            if (tokens[idx].toUpperCase().includes('WEEKLY')) isWeekly = true;
             idx++;
         }
 
@@ -790,7 +792,7 @@
             }
         }
 
-        return { ticker, dateCode, qtyTrades: totalQty, allPositions, strategy };
+        return { ticker, dateCode, qtyTrades: totalQty, allPositions, strategy, isWeekly };
     }
 
     // Fallback: assigns entire cost to first matching-sign leg (v1 behavior)
@@ -834,6 +836,21 @@
             const legDate   = pos.dateCode || dateCode;
             const legId     = '.' + ticker + legDate + optChar + pos.strike;
             return pos.qty > 0 ? legId : '-' + legId;
+        }).join(',');
+    }
+
+    // Butterfly/broken-wing legs: no prices, x{qty} suffix for |qty|>1, sorted ascending
+    // legTicker overrides ticker in leg IDs (e.g. SPXW for SPX Weeklys)
+    function buildButterflyLegsString(ticker, dateCode, allPositions, legTicker) {
+        const lt = legTicker || ticker;
+        const sorted = [...allPositions].sort((a, b) => a.strike - b.strike);
+        return sorted.map(pos => {
+            const optChar = pos.optType[0].toUpperCase();
+            const legDate = pos.dateCode || dateCode;
+            const base = '.' + lt + legDate + optChar + pos.strike;
+            if (pos.qty === 1)  return base;
+            if (pos.qty === -1) return '-' + base;
+            return base + 'x' + pos.qty;
         }).join(',');
     }
 
@@ -995,6 +1012,28 @@
         if (parsed.strategy === 'IRON_CONDOR') {
             const legs = buildCondorLegsString(parsed.ticker, parsed.dateCode, parsed.allPositions);
             return 'https://optionstrat.com/build/iron-condor/' + parsed.ticker + '/' + legs;
+        }
+
+        // BUTTERFLY / ~BUTTERFLY: no prices, correct path, SPXW for SPX Weeklys
+        if (parsed.strategy === 'BUTTERFLY' || parsed.strategy === '~BUTTERFLY') {
+            const optType = parsed.allPositions[0].optType[0].toLowerCase() === 'c' ? 'call' : 'put';
+            let path;
+            if (parsed.strategy === '~BUTTERFLY') {
+                // TOS uses ~BUTTERFLY for broken-wing / ratio variants
+                path = optType + '-broken-wing';
+            } else {
+                // Detect symmetric (equal wing widths) vs broken wing
+                const strikes = [...new Set(parsed.allPositions.map(p => p.strike))].sort((a, b) => a - b);
+                const isSymmetric = strikes.length >= 3 &&
+                    Math.abs((strikes[1] - strikes[0]) - (strikes[strikes.length - 1] - strikes[1])) < 0.01;
+                path = isSymmetric
+                    ? (isBuy ? 'long' : 'short') + '-' + optType + '-butterfly'
+                    : optType + '-broken-wing';
+            }
+            // SPX with (Weeklys) → SPXW in leg identifiers (OptionStrat requires it)
+            const legTicker = (parsed.ticker.toUpperCase() === 'SPX' && parsed.isWeekly) ? 'SPXW' : parsed.ticker;
+            const legs = buildButterflyLegsString(parsed.ticker, parsed.dateCode, parsed.allPositions, legTicker);
+            return 'https://optionstrat.com/build/' + path + '/' + parsed.ticker + '/' + legs;
         }
 
         // Try B-S distribution: fetch stock price, calibrate IV, distribute
