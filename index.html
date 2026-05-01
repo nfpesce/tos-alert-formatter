@@ -1162,8 +1162,11 @@
         const padding = Math.max(width * 1.5, minStrike * 0.005, 1);
         const minPrice = Math.max(0, minStrike - padding);
         const maxPrice = maxStrike + padding;
+        const isBuy = parseIsBuy(formattedOrder);
         const netPrice = parseNetCost(formattedOrder);
-        const entryValuePerSpread = inferEntryValuePerSpread(netPrice, allPositions);
+        // SELL @+price = credit (receive); SELL @-price = debit (pay). Flip sign for SELL.
+        const adjustedNetPrice = isBuy ? netPrice : -netPrice;
+        const entryValuePerSpread = inferEntryValuePerSpread(adjustedNetPrice, allPositions);
         const totalEntryValue = entryValuePerSpread * parsed.qtyTrades;
 
         const pointCount = 360;
