@@ -38,10 +38,11 @@ Section 3a — parseSingleLineStrategy()  Parser de estrategias TOS
 Section 3b — Black-Scholes pricing  Calibración de IV y distribución de precios por leg
 Section 3c — optionStratURLAsync()  Generación de URL OptionStrat (async, usa BS)
 Section 3d — Expiration P/L chart   Canvas 2D para gráfico de P&L al vencimiento
+Section 3e — parseOptionStratURL()  Parser URL OptionStrat → TOS string + parsed object
 Section 4  — UI Logic               processInput(), selectCard(), renderChart(), etc.
 ```
 
-### Flujo principal al pegar una alerta
+### Flujo principal al pegar una alerta TOS
 
 ```
 paste → processInput()
@@ -52,6 +53,22 @@ paste → processInput()
     ├── renderPayoffForOrder()  → gráfico P&L canvas (async, no bloquea clipboard)
     └── setTimeout(renderChart) → widget TradingView (diferido, no bloquea clipboard)
 ```
+
+### Flujo alternativo: URL de OptionStrat como input
+
+```
+paste URL → processInput()
+    ├── isOptionStratURL()      → detecta formato https://optionstrat.com/build/…
+    ├── parseOptionStratURL()   → builds tosFormatted (@0.00) + parsed object DIRECTAMENTE
+    │       (bypasses formatAlert y parseSingleLineStrategy)
+    ├── adjustPrice() x2        → genera +.01 y +.05
+    ├── selectCard()            → copia al clipboard (PRIORIDAD MÁXIMA)
+    ├── renderPayoffForOrder()  → gráfico P&L con @0.00 (muestra estructura sin costo)
+    │       (calendars/diagonals: multi-date → hidePayoffChart silencioso)
+    └── setTimeout(renderChart) → widget TradingView (diferido)
+```
+
+`currentOptionStratURL` guarda la URL original → botón "Open in OptionStrat" la reabre directamente (sin recomputar).
 
 ---
 
@@ -115,7 +132,25 @@ const isFutures = /(?:^|\s)\/[A-Z]/.test(input);
 ```
 La versión sin `(?:^|\s)` daba falso positivo con `CALL/PUT` en Iron Condor.
 
-### 5.7 Formato del string para TOS Chart
+### 5.8 Parsing de URL OptionStrat → TOS (Section 3e)
+
+`parseOptionStratURL(url)` convierte directamente una URL de OptionStrat en:
+- `tosFormatted`: string TOS con precio `@0.00 LMT` (placeholder)
+- `parsed`: objeto compatible con `parseSingleLineStrategy` output
+
+**Convenciones de BUY/SELL por slug** (contra-intuitivo en IRON_CONDOR):
+- `iron-condor` / `iron-butterfly` → `BUY 1` aunque sea la estructura de crédito (long outer, short inner). Esto coincide con cómo `parseSingleLineStrategy` reconstruye los legs: `BUY IRON CONDOR` produce long outer / short inner = crédito.
+- `bull-put-spread` → `BUY 1 VERTICAL` (primera pata long); `bear-call-spread` → `SELL -1 VERTICAL` (primera pata short).
+
+**Orden de strikes en IRON_CONDOR**: `callSell/callBuy/putSell/putBuy` (reconstruido desde los legs de la URL, no desde el orden literal).
+
+**BACKRATIO**: `BUY` → `parts[0]=short, parts[1]=long`, ratioStr=`|short|/|long|`; `SELL` → `parts[0]=long, parts[1]=short`.
+
+**DIAGONAL/CALENDAR**: back month (long, fecha posterior) = parts[0], front month (short, fecha anterior) = parts[1]. Formato fecha: `"DD1 MON1 YY1/DD2 MON2 YY2"` (back first, para que el parser la lea correctamente).
+
+**isWeekly**: calculado con `isThirdFriday(dateCode)` — true si la fecha NO es el 3er viernes del mes.
+
+### 5.9 Formato del string para TOS Chart
 ```
 +.SPY260420P711 -.SPY260420P712 -.SPY260420C713 +.SPY260420C714
 ```
@@ -179,11 +214,12 @@ Regex futuros: `processed.replace(/\/([A-Z][A-Z0-9]*)(\d{2})(?::[A-Z]{1,5})?/g, 
 let currentResults  = { original:'', plus1:'', plus5:'' };
 let lastSelectedOption = 'original';   // card seleccionada
 let currentTicker   = '';              // ticker del último trade parseado
-let currentParsed   = null;            // resultado de parseSingleLineStrategy
+let currentParsed   = null;            // resultado de parseSingleLineStrategy (o parseOptionStratURL)
 let currentInterval = 'D';            // timeframe del widget TV
 let tvWidget        = null;            // instancia TradingView.widget
 let currentPayoffModel = null;         // modelo P&L actual
 let payoffRenderToken  = 0;            // anti-race condition para renderPayoffForOrder
+let currentOptionStratURL = '';        // URL original si el input fue una URL OptionStrat; '' si fue TOS alert
 ```
 
 ---
@@ -210,6 +246,11 @@ let payoffRenderToken  = 0;            // anti-race condition para renderPayoffF
   - Marcador de precio subyacente (async Finnhub, no bloquea)
   - No muestra marcador para índices (SPX/NDX/RUT/DJX)
 - Auto-select en textarea al hacer focus
+- **Input dual**: acepta tanto alertas TOS como URLs de OptionStrat (`https://optionstrat.com/build/…`)
+  - Estrategias soportadas vía URL: SIMPLE, VERTICAL, BUTTERFLY, ~BUTTERFLY, CONDOR, IRON_CONDOR, BACKRATIO, DIAGONAL/CALENDAR y sus variantes (bull/bear, broken-wing, ratio-spread, inverse, etc.)
+  - TOS output con precio `@0.00` como placeholder; variantes +1c/+5c funcionan normalmente
+  - Gráfico P&L muestra la estructura al precio cero; calendars/diagonals ocultan el chart (multi-date)
+  - Botón "Open in OptionStrat" reabre la URL original directamente
 
 ### 🔲 Pendiente / posibles mejoras
 
@@ -219,6 +260,7 @@ let payoffRenderToken  = 0;            // anti-race condition para renderPayoffF
 - **Estrategias no soportadas**: RATIO_SPREAD genérico, opciones sobre futuros con vencimiento propio.
 - **Mobile UX**: funciona pero no está optimizado para pantallas < 400px.
 - **Test unitario formal**: actualmente la verificación es manual + snippets Node ad-hoc.
+- **URL con precio en legs**: `parseOptionStratURL` ignora precios incrustados en legs (formato `@N.NN`). Se podría usar para pre-llenar el precio en lugar de `@0.00`.
 
 ---
 
