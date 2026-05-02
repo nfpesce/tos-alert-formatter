@@ -1080,14 +1080,15 @@
         const legsRaw    = parts.slice(2).join('/');
 
         // ── 1. Parse leg tokens ───────────────────────────────────────────────
-        const LEG_RE = /^(-?)\.([A-Z0-9]+)(\d{6})([CP])([\d.]+)(?:x(-?\d+))?$/i;
+        const LEG_RE = /^(-?)\.([A-Z0-9]+)(\d{6})([CP])([\d.]+)(?:x(-?\d+))?(?:@([\d.]+))?$/i;
         const legs = legsRaw.split(',').map(token => {
             const m = token.trim().match(LEG_RE);
             if (!m) throw new Error('Cannot parse leg: ' + token);
             const qty = m[6] !== undefined ? parseInt(m[6], 10)
                       : m[1] === '-'        ? -1
                       :                       1;
-            return { dateCode: m[3], optChar: m[4].toUpperCase(), strike: parseFloat(m[5]), qty };
+            const price = m[7] !== undefined ? parseFloat(m[7]) : null;
+            return { dateCode: m[3], optChar: m[4].toUpperCase(), strike: parseFloat(m[5]), qty, price };
         });
 
         // ── 2. Strategy slug → parsed.strategy ────────────────────────────────
@@ -1232,11 +1233,18 @@
             stratKeyword  = 'DIAGONAL ';
         }
 
+        // ── 6b. Net price from URL leg prices ────────────────────────────────
+        let netPriceStr = '0.00';
+        if (legs.every(l => l.price !== null)) {
+            const net = Math.round(legs.reduce((s, l) => s + l.qty * l.price, 0) * 100) / 100;
+            netPriceStr = formatTosPrice(net);
+        }
+
         const tosFormatted =
             action + ' ' + qty + ' ' + stratKeyword +
             urlTicker + ' 100 ' + weeklyStr +
             dateStr + ' ' + strikesStr + optTypeSuffix +
-            ' @0.00 LMT';
+            ' @' + netPriceStr + ' LMT';
 
         // ── 7. Return ──────────────────────────────────────────────────────────
         return {

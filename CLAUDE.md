@@ -20,10 +20,10 @@ Convierte alertas de órdenes de ThinkorSwim (TOS) en texto listo para pegar en 
 | Archivo | Rol |
 |---|---|
 | `index.html` | Producción. Tiene todos los features activos. |
-| `index_v3.html` | Referencia histórica de v3 (espejo de index.html durante desarrollo). |
+| `index_vYYYY-MM-DD.html` | Snapshot histórico con fecha (ej. `index_v2026-05-01.html`). Se crea al terminar cada sesión de desarrollo. |
 | `index_v2.html` | Referencia histórica de v2. No se modifica. |
 
-> **Convención de deploy:** Los cambios van siempre a `index.html`. `index_v3.html` se actualiza en paralelo como snapshot histórico. Al terminar una sesión de desarrollo se hace commit + push a `master`.
+> **Convención de deploy:** Los cambios van siempre a `index.html`. Al terminar una sesión de desarrollo se crea un snapshot `index_vYYYY-MM-DD.html` (copia exacta de index.html con la fecha del día) y se hace commit + push a `master`. GitHub Pages publica automáticamente.
 
 ---
 
@@ -248,8 +248,8 @@ let currentOptionStratURL = '';        // URL original si el input fue una URL O
 - Auto-select en textarea al hacer focus
 - **Input dual**: acepta tanto alertas TOS como URLs de OptionStrat (`https://optionstrat.com/build/…`)
   - Estrategias soportadas vía URL: SIMPLE, VERTICAL, BUTTERFLY, ~BUTTERFLY, CONDOR, IRON_CONDOR, BACKRATIO, DIAGONAL/CALENDAR y sus variantes (bull/bear, broken-wing, ratio-spread, inverse, etc.)
-  - TOS output con precio `@0.00` como placeholder; variantes +1c/+5c funcionan normalmente
-  - Gráfico P&L muestra la estructura al precio cero; calendars/diagonals ocultan el chart (multi-date)
+  - Si la URL incluye precios por leg (`@N.NN`), el precio neto se calcula como `sum(qty × price_per_unit)` y reemplaza el placeholder. Ej: `@3.58` long + `@6.28` long = `@2.70` debit. Si algún leg no tiene precio, se usa `@0.00`.
+  - Gráfico P&L refleja el costo real cuando los precios están presentes; calendars/diagonals ocultan el chart (multi-date)
   - Botón "Open in OptionStrat" reabre la URL original directamente
 
 ### 🔲 Pendiente / posibles mejoras
@@ -260,7 +260,6 @@ let currentOptionStratURL = '';        // URL original si el input fue una URL O
 - **Estrategias no soportadas**: RATIO_SPREAD genérico, opciones sobre futuros con vencimiento propio.
 - **Mobile UX**: funciona pero no está optimizado para pantallas < 400px.
 - **Test unitario formal**: actualmente la verificación es manual + snippets Node ad-hoc.
-- **URL con precio en legs**: `parseOptionStratURL` ignora precios incrustados en legs (formato `@N.NN`). Se podría usar para pre-llenar el precio en lugar de `@0.00`.
 
 ---
 
@@ -296,3 +295,5 @@ git push origin master
 ```
 
 No hay build step. No hay CI. El push a master es el deploy.
+
+> **Convención de sesión:** Al finalizar cualquier cambio funcional, siempre hacer commit + push a `master` para publicar en GitHub Pages. No dejar cambios pendientes al terminar la sesión.

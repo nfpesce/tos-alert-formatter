@@ -615,6 +615,13 @@
         return pad(y) + pad(m) + pad(d);
     }
 
+    function isThirdFriday(dc) {
+        const yy = parseInt(dc.slice(0,2),10), mm = parseInt(dc.slice(2,4),10)-1, dd = parseInt(dc.slice(4,6),10);
+        const d = new Date(2000+yy, mm, dd);
+        if (d.getDay() !== 5) return false;
+        return Math.floor((dd-1)/7) === 2;
+    }
+
     function parseSingleLineStrategy(lineText) {
         const tokens = lineText.trim().split(/\s+/);
         let idx = 0;
@@ -1055,6 +1062,205 @@
     }
 
     // =========================================================================
+    // 3e. OPTIONSTRAT URL → TOS PARSER
+    // =========================================================================
+
+    function dateCodeToTOS(dc) {
+        const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        return dc.slice(4,6) + ' ' + months[parseInt(dc.slice(2,4),10)-1] + ' ' + dc.slice(0,2);
+    }
+
+    function parseOptionStratURL(url) {
+        const afterBuild = url.split(/optionstrat\.com\/build\//i)[1] || '';
+        const parts = afterBuild.split('/');
+        if (parts.length < 3) throw new Error('URL format not recognized');
+
+        const stratSlug  = parts[0].toLowerCase();
+        const urlTicker  = parts[1].toUpperCase();
+        const legsRaw    = parts.slice(2).join('/');
+
+        // ── 1. Parse leg tokens ───────────────────────────────────────────────
+        const LEG_RE = /^(-?)\.([A-Z0-9]+)(\d{6})([CP])([\d.]+)(?:x(-?\d+))?(?:@([\d.]+))?$/i;
+        const legs = legsRaw.split(',').map(token => {
+            const m = token.trim().match(LEG_RE);
+            if (!m) throw new Error('Cannot parse leg: ' + token);
+            const qty = m[6] !== undefined ? parseInt(m[6], 10)
+                      : m[1] === '-'        ? -1
+                      :                       1;
+            const price = m[7] !== undefined ? parseFloat(m[7]) : null;
+            return { dateCode: m[3], optChar: m[4].toUpperCase(), strike: parseFloat(m[5]), qty, price };
+        });
+
+        // ── 2. Strategy slug → parsed.strategy ────────────────────────────────
+        const SLUG_TO_STRATEGY = {
+            'bull-put-spread':'VERTICAL','bear-call-spread':'VERTICAL',
+            'bull-call-spread':'VERTICAL','bear-put-spread':'VERTICAL',
+            'iron-condor':'IRON_CONDOR','iron-butterfly':'IRON_CONDOR',
+            'long-call-condor':'CONDOR','long-put-condor':'CONDOR',
+            'short-call-condor':'CONDOR','short-put-condor':'CONDOR',
+            'long-put-butterfly':'BUTTERFLY','long-call-butterfly':'BUTTERFLY',
+            'short-put-butterfly':'BUTTERFLY','short-call-butterfly':'BUTTERFLY',
+            'put-broken-wing':'~BUTTERFLY','call-broken-wing':'~BUTTERFLY',
+            'inverse-call-broken-wing':'~BUTTERFLY','inverse-put-broken-wing':'~BUTTERFLY',
+            'call-ratio-backspread':'BACKRATIO','put-ratio-backspread':'BACKRATIO',
+            'call-ratio-spread':'BACKRATIO','put-ratio-spread':'BACKRATIO',
+            'calendar-call-spread':'DIAGONAL','calendar-put-spread':'DIAGONAL',
+            'diagonal-call-spread':'DIAGONAL','diagonal-put-spread':'DIAGONAL',
+            'long-call':'SIMPLE','long-put':'SIMPLE','short-call':'SIMPLE','short-put':'SIMPLE',
+        };
+        let tosStrategy = SLUG_TO_STRATEGY[stratSlug];
+        if (!tosStrategy) {
+            // fallback: infer from leg count and types
+            const n = legs.length;
+            const types = [...new Set(legs.map(l => l.optChar))];
+            if (n === 1) tosStrategy = 'SIMPLE';
+            else if (n === 2) tosStrategy = 'VERTICAL';
+            else if (n === 3) tosStrategy = '~BUTTERFLY';
+            else tosStrategy = types.length > 1 ? 'IRON_CONDOR' : 'CONDOR';
+        }
+
+        // ── 3. BUY/SELL ───────────────────────────────────────────────────────
+        const IS_BUY_MAP = {
+            'long-call':true,'long-put':true,'short-call':false,'short-put':false,
+            'bull-put-spread':true,'bull-call-spread':true,
+            'bear-call-spread':false,'bear-put-spread':false,
+            'iron-condor':true,'iron-butterfly':true,
+            'long-call-condor':true,'long-put-condor':true,
+            'short-call-condor':false,'short-put-condor':false,
+            'long-put-butterfly':true,'long-call-butterfly':true,
+            'short-put-butterfly':false,'short-call-butterfly':false,
+            'put-broken-wing':true,'call-broken-wing':true,
+            'inverse-call-broken-wing':false,'inverse-put-broken-wing':false,
+            'call-ratio-backspread':true,'put-ratio-backspread':true,
+            'call-ratio-spread':false,'put-ratio-spread':false,
+            'calendar-call-spread':true,'calendar-put-spread':true,
+            'diagonal-call-spread':true,'diagonal-put-spread':true,
+        };
+        const isBuy = IS_BUY_MAP.hasOwnProperty(stratSlug)
+            ? IS_BUY_MAP[stratSlug]
+            : legs.reduce((s, l) => s + l.qty, 0) >= 0;
+
+        // ── 4. allPositions ───────────────────────────────────────────────────
+        const allPositions = legs.map(l => ({
+            strike:   l.strike,
+            optType:  l.optChar === 'C' ? 'CALL' : 'PUT',
+            qty:      l.qty,
+            dateCode: l.dateCode,
+        }));
+
+        // ── 5. Primary dateCode & isWeekly ────────────────────────────────────
+        const primaryDateCode = legs[0].dateCode;
+        const isWeekly = !isThirdFriday(primaryDateCode);
+        const weeklyStr = isWeekly ? '(Weeklys) ' : '';
+
+        // ── 6. Build TOS display string ───────────────────────────────────────
+        const action  = isBuy ? 'BUY'  : 'SELL';
+        const qty     = isBuy ? '1'    : '-1';
+
+        let strikesStr = '', optTypeSuffix = '', dateStr = '', stratKeyword = '';
+
+        if (tosStrategy === 'SIMPLE') {
+            strikesStr   = String(legs[0].strike);
+            optTypeSuffix = ' ' + (legs[0].optChar === 'C' ? 'CALL' : 'PUT');
+            dateStr       = dateCodeToTOS(primaryDateCode);
+            stratKeyword  = '';
+
+        } else if (tosStrategy === 'VERTICAL') {
+            strikesStr    = legs[0].strike + '/' + legs[1].strike;
+            optTypeSuffix = ' ' + (legs[0].optChar === 'C' ? 'CALL' : 'PUT');
+            dateStr       = dateCodeToTOS(primaryDateCode);
+            stratKeyword  = 'VERTICAL ';
+
+        } else if (tosStrategy === 'BUTTERFLY' || tosStrategy === '~BUTTERFLY') {
+            const sorted = [...legs].sort((a,b) => a.strike - b.strike);
+            strikesStr    = sorted.map(l => l.strike).join('/');
+            optTypeSuffix = ' ' + (sorted[0].optChar === 'C' ? 'CALL' : 'PUT');
+            dateStr       = dateCodeToTOS(primaryDateCode);
+            // compute ratio: low/mid/high absolute quantities
+            const rLow = Math.abs(sorted[0].qty), rMid = Math.abs(sorted[1].qty), rHigh = Math.abs(sorted[2].qty);
+            const ratioPrefix = (rLow === 1 && rMid === 2 && rHigh === 1) ? '' : (rLow + '/' + rMid + '/' + rHigh + ' ');
+            stratKeyword = ratioPrefix + tosStrategy + ' ';
+
+        } else if (tosStrategy === 'CONDOR') {
+            const sorted = [...legs].sort((a,b) => a.strike - b.strike);
+            strikesStr    = sorted.map(l => l.strike).join('/');
+            optTypeSuffix = ' ' + (sorted[0].optChar === 'C' ? 'CALL' : 'PUT');
+            dateStr       = dateCodeToTOS(primaryDateCode);
+            stratKeyword  = 'CONDOR ';
+
+        } else if (tosStrategy === 'IRON_CONDOR') {
+            const calls = legs.filter(l => l.optChar === 'C').sort((a,b) => a.strike - b.strike);
+            const puts  = legs.filter(l => l.optChar === 'P').sort((a,b) => a.strike - b.strike);
+            const callSell = calls.find(l => l.qty < 0) || calls[0];
+            const callBuy  = calls.find(l => l.qty > 0) || calls[1];
+            const putSell  = puts.find(l => l.qty < 0)  || puts[1];
+            const putBuy   = puts.find(l => l.qty > 0)  || puts[0];
+            strikesStr    = callSell.strike + '/' + callBuy.strike + '/' + putSell.strike + '/' + putBuy.strike;
+            optTypeSuffix = '';  // no CALL/PUT suffix for iron condor
+            dateStr       = dateCodeToTOS(primaryDateCode);
+            stratKeyword  = 'IRON CONDOR ';
+
+        } else if (tosStrategy === 'BACKRATIO') {
+            const shortLeg = legs.find(l => l.qty < 0);
+            const longLeg  = legs.find(l => l.qty > 0);
+            let part0, part1, ratioStr;
+            if (isBuy) {
+                part0 = shortLeg.strike; part1 = longLeg.strike;
+                ratioStr = Math.abs(shortLeg.qty) + '/' + Math.abs(longLeg.qty);
+            } else {
+                part0 = longLeg.strike; part1 = shortLeg.strike;
+                ratioStr = Math.abs(longLeg.qty) + '/' + Math.abs(shortLeg.qty);
+            }
+            strikesStr    = part0 + '/' + part1;
+            optTypeSuffix = ' ' + (legs[0].optChar === 'C' ? 'CALL' : 'PUT');
+            dateStr       = dateCodeToTOS(primaryDateCode);
+            stratKeyword  = ratioStr + ' BACKRATIO ';
+
+        } else if (tosStrategy === 'DIAGONAL') {
+            // For calendar/diagonal: back month (long, later date) first
+            const sortedByDate = [...legs].sort((a,b) => b.dateCode.localeCompare(a.dateCode));
+            const backLeg  = sortedByDate[0];
+            const frontLeg = sortedByDate[sortedByDate.length - 1];
+            // Date string: "DD1 MON1 YY1/DD2 MON2 YY2" (back first)
+            const d1 = dateCodeToTOS(backLeg.dateCode);
+            const d2 = dateCodeToTOS(frontLeg.dateCode);
+            dateStr = d1 + '/' + d2;
+            // If same strike (calendar): single strike; else two strikes
+            strikesStr = backLeg.strike === frontLeg.strike
+                ? String(backLeg.strike)
+                : backLeg.strike + '/' + frontLeg.strike;
+            optTypeSuffix = ' ' + (backLeg.optChar === 'C' ? 'CALL' : 'PUT');
+            stratKeyword  = 'DIAGONAL ';
+        }
+
+        // ── 6b. Net price from URL leg prices ────────────────────────────────
+        let netPriceStr = '0.00';
+        if (legs.every(l => l.price !== null)) {
+            const net = Math.round(legs.reduce((s, l) => s + l.qty * l.price, 0) * 100) / 100;
+            netPriceStr = formatTosPrice(net);
+        }
+
+        const tosFormatted =
+            action + ' ' + qty + ' ' + stratKeyword +
+            urlTicker + ' 100 ' + weeklyStr +
+            dateStr + ' ' + strikesStr + optTypeSuffix +
+            ' @' + netPriceStr + ' LMT';
+
+        // ── 7. Return ──────────────────────────────────────────────────────────
+        return {
+            tosFormatted,
+            parsed: {
+                ticker:       urlTicker,
+                dateCode:     primaryDateCode,
+                qtyTrades:    1,
+                allPositions,
+                strategy:     tosStrategy,
+                isWeekly,
+            }
+        };
+    }
+
+    // =========================================================================
     // 3d. EXPIRATION P/L CHART
     // =========================================================================
 
@@ -1084,6 +1290,7 @@
 
     function inferEntryValuePerSpread(netPrice, allPositions) {
         if (netPrice < 0) return netPrice;
+
         const strikes = uniqueNumbers(allPositions.map(pos => pos.strike));
         const minStrike = strikes[0];
         const maxStrike = strikes[strikes.length - 1];
@@ -1093,6 +1300,7 @@
         const grossValues = probes.map(price => grossExpirationValue(allPositions, price));
         const grossMin = Math.min(...grossValues);
         const grossMax = Math.max(...grossValues);
+
         if (grossMax <= 1e-8 && grossMin < -1e-8) return -Math.abs(netPrice);
         return Math.abs(netPrice);
     }
@@ -1107,12 +1315,14 @@
                 breakevens.push(value);
             }
         };
+
         let inFlatZeroSegment = false;
         for (let i = 1; i < points.length; i++) {
             const prev = points[i - 1];
             const curr = points[i];
             const prevIsZero = Math.abs(prev.pnl) < zeroTolerance;
             const currIsZero = Math.abs(curr.pnl) < zeroTolerance;
+
             if (prevIsZero && currIsZero) {
                 if (!inFlatZeroSegment) add(prev.price);
                 inFlatZeroSegment = true;
@@ -1138,14 +1348,17 @@
         const parsed = preParsed || parseSingleLineStrategy(formattedOrder);
         const allPositions = parsed.allPositions || [];
         if (!allPositions.length) return null;
+
         const dateCodes = [...new Set(allPositions.map(pos => pos.dateCode || parsed.dateCode).filter(Boolean))];
         if (dateCodes.length !== 1) return null;
+
         const validLegs = allPositions.every(pos => {
             const type = (pos.optType || '').toUpperCase();
             return Number.isFinite(pos.strike) && Number.isFinite(pos.qty) &&
                    (type.startsWith('C') || type.startsWith('P'));
         });
         if (!validLegs) return null;
+
         const strikes = uniqueNumbers(allPositions.map(pos => pos.strike));
         if (!strikes.length) return null;
 
@@ -1155,8 +1368,11 @@
         const padding = Math.max(width * 1.5, minStrike * 0.005, 1);
         const minPrice = Math.max(0, minStrike - padding);
         const maxPrice = maxStrike + padding;
+        const isBuy = parseIsBuy(formattedOrder);
         const netPrice = parseNetCost(formattedOrder);
-        const entryValuePerSpread = inferEntryValuePerSpread(netPrice, allPositions);
+        // SELL @+price = credit (receive); SELL @-price = debit (pay). Flip sign for SELL.
+        const adjustedNetPrice = isBuy ? netPrice : -netPrice;
+        const entryValuePerSpread = inferEntryValuePerSpread(adjustedNetPrice, allPositions);
         const totalEntryValue = entryValuePerSpread * parsed.qtyTrades;
 
         const pointCount = 360;
@@ -1190,6 +1406,7 @@
         premiumLabel.textContent = isCredit ? 'Net Credit' : 'Net Debit';
         premiumValue.textContent = moneyLabel(Math.abs(model.entryCashFlow));
         premiumValue.className = 'value ' + (isCredit ? 'positive' : 'negative');
+
         document.getElementById('payoffMaxLoss').textContent   = moneyLabel(Math.max(0, -model.minPnl));
         document.getElementById('payoffMaxProfit').textContent = moneyLabel(Math.max(0,  model.maxPnl));
         document.getElementById('payoffBreakevens').textContent = model.breakevens.length
@@ -1199,11 +1416,13 @@
     function drawPayoffChart(model) {
         const canvas = document.getElementById('payoffChart');
         if (!canvas || !model) return;
+
         const width  = canvas.clientWidth  || 640;
         const height = canvas.clientHeight || 320;
         const dpr = window.devicePixelRatio || 1;
         canvas.width  = Math.floor(width  * dpr);
         canvas.height = Math.floor(height * dpr);
+
         const ctx = canvas.getContext('2d');
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, width, height);
@@ -1216,29 +1435,35 @@
         const yPad = Math.max((maxYRaw - minYRaw) * 0.12, 10);
         const minY = minYRaw - yPad;
         const maxY = maxYRaw + yPad;
+
         const xToPx = price => plot.left + ((price - model.minPrice) / (model.maxPrice - model.minPrice)) * plotW;
         const yToPx = pnl   => plot.top  + ((maxY - pnl) / (maxY - minY)) * plotH;
         const zeroY = yToPx(0);
 
-        ctx.fillStyle = '#071326'; ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = '#071326';
+        ctx.fillRect(0, 0, width, height);
+
         ctx.strokeStyle = 'rgba(255,255,255,0.08)';
         ctx.lineWidth = 1;
         ctx.fillStyle = '#b8c2d8';
         ctx.font = '11px Segoe UI, Arial, sans-serif';
-        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
         for (let i = 0; i <= 5; i++) {
             const value = minY + (maxY - minY) * (i / 5);
             const y = yToPx(value);
             ctx.beginPath(); ctx.moveTo(plot.left, y); ctx.lineTo(width - plot.right, y); ctx.stroke();
             ctx.fillText(moneyLabel(value), plot.left - 8, y);
         }
-        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
         for (let i = 0; i <= 6; i++) {
             const price = model.minPrice + (model.maxPrice - model.minPrice) * (i / 6);
             const x = xToPx(price);
             ctx.beginPath(); ctx.moveTo(x, plot.top); ctx.lineTo(x, height - plot.bottom); ctx.stroke();
             ctx.fillText(priceLabel(price), x, height - plot.bottom + 8);
         }
+
         ctx.strokeStyle = 'rgba(255,255,255,0.78)';
         ctx.beginPath(); ctx.moveTo(plot.left, zeroY); ctx.lineTo(width - plot.right, zeroY); ctx.stroke();
 
@@ -1249,13 +1474,17 @@
             ctx.lineTo(xToPx(model.points[model.points.length - 1].price), zeroY);
             ctx.closePath();
         }
+
         ctx.save();
         ctx.beginPath(); ctx.rect(plot.left, plot.top, plotW, Math.max(0, zeroY - plot.top)); ctx.clip();
-        payoffAreaPath(); ctx.fillStyle = 'rgba(0, 210, 72, 0.24)'; ctx.fill();
+        payoffAreaPath();
+        ctx.fillStyle = 'rgba(0, 210, 72, 0.24)'; ctx.fill();
         ctx.restore();
+
         ctx.save();
         ctx.beginPath(); ctx.rect(plot.left, zeroY, plotW, Math.max(0, height - plot.bottom - zeroY)); ctx.clip();
-        payoffAreaPath(); ctx.fillStyle = 'rgba(224, 0, 64, 0.28)'; ctx.fill();
+        payoffAreaPath();
+        ctx.fillStyle = 'rgba(224, 0, 64, 0.28)'; ctx.fill();
         ctx.restore();
 
         ctx.setLineDash([4, 4]);
@@ -1282,6 +1511,7 @@
             const markerPrice = Math.min(Math.max(model.underlyingPrice, model.minPrice), model.maxPrice);
             const x = xToPx(markerPrice);
             const label = priceLabel(model.underlyingPrice);
+
             function pnlAtPrice(price) {
                 if (price <= model.points[0].price) return model.points[0].pnl;
                 for (let i = 1; i < model.points.length; i++) {
@@ -1294,6 +1524,7 @@
                 }
                 return model.points[model.points.length - 1].pnl;
             }
+
             ctx.font = '12px Segoe UI, Arial, sans-serif';
             const labelWidth = ctx.measureText(label).width + 16;
             const labelHeight = 22;
@@ -1307,6 +1538,7 @@
             const labelY = aboveY >= plot.top ? aboveY : clamp(belowY, plot.top, chartBottom - labelHeight);
             const nearLeft  = isLeft  || x - plot.left < labelWidth / 2 + gap + pointerSize;
             const nearRight = isRight || chartRight - x < labelWidth / 2 + gap + pointerSize;
+
             let labelX, pointerSide;
             if (nearLeft) {
                 labelX = clamp(x + gap + pointerSize, plot.left, chartRight - labelWidth);
@@ -1320,13 +1552,16 @@
             }
             const labelCenterX = labelX + labelWidth / 2;
             const labelCenterY = labelY + labelHeight / 2;
+
             ctx.fillStyle = 'rgba(250, 204, 21, 0.18)';
             ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
             ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)';
             ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
             ctx.fillStyle = '#fde68a';
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
             ctx.fillText(label, labelCenterX, labelCenterY);
+
             ctx.fillStyle = '#facc15';
             ctx.beginPath();
             if (pointerSide === 'left') {
@@ -1354,7 +1589,8 @@
 
         function drawLineSegment(a, b, color) {
             ctx.strokeStyle = color;
-            ctx.lineWidth = 3; ctx.lineCap = 'round';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(xToPx(a.price), yToPx(a.pnl));
             ctx.lineTo(xToPx(b.price), yToPx(b.pnl));
@@ -1371,9 +1607,11 @@
                 drawLineSegment(a, b, (a.pnl + b.pnl) / 2 >= 0 ? '#12d447' : '#e00040');
             }
         }
+
         ctx.fillStyle = '#fff';
         ctx.font = '12px Segoe UI, Arial, sans-serif';
-        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
         ctx.fillText('Expiration P/L', plot.left + 4, plot.top + 4);
     }
 
@@ -1387,12 +1625,16 @@
         const renderToken = ++payoffRenderToken;
         const model = buildPayoffModel(formattedOrder, preParsed);
         if (!model) { hidePayoffChart(); return; }
+
         currentPayoffModel = model;
         updatePayoffStats(model);
         document.getElementById('payoffPanel').classList.add('visible');
         drawPayoffChart(model);
+
+        // Skip underlying price fetch for indices (Finnhub free plan can't quote them)
         const INDEX_TICKERS = new Set(['SPX','SPXW','NDX','RUT','DJX']);
         if (INDEX_TICKERS.has((model.ticker || '').toUpperCase())) return;
+
         try {
             const underlyingPrice = await fetchStockPrice(model.ticker);
             if (renderToken !== payoffRenderToken || !currentPayoffModel) return;
@@ -1400,7 +1642,7 @@
                 currentPayoffModel.underlyingPrice = underlyingPrice;
                 drawPayoffChart(currentPayoffModel);
             }
-        } catch (e) { /* silent */ }
+        } catch (e) { /* silent fallback: chart without underlying marker */ }
     }
 
     // =========================================================================
@@ -1415,6 +1657,11 @@
     let tvWidget = null;
     let currentPayoffModel = null;
     let payoffRenderToken = 0;
+    let currentOptionStratURL = '';
+
+    function isOptionStratURL(text) {
+        return /^https?:\/\/optionstrat\.com\/build\//i.test(text.trim());
+    }
 
     function buildTOSChartString(parsed) {
         if (!parsed || !parsed.allPositions || !parsed.allPositions.length) return '';
@@ -1515,6 +1762,62 @@
             hidePayoffChart();
             return;
         }
+
+        // ── OptionStrat URL input ─────────────────────────────────────────────
+        if (isOptionStratURL(input)) {
+            currentOptionStratURL = input;
+            try {
+                const { tosFormatted, parsed } = parseOptionStratURL(input);
+                currentResults.original = tosFormatted;
+                currentResults.plus1    = adjustPrice(tosFormatted, 0.01);
+                currentResults.plus5    = adjustPrice(tosFormatted, 0.05);
+                currentTicker = parsed.ticker || '';
+                currentParsed = parsed;
+
+                document.getElementById('text-original').textContent = currentResults.original;
+                document.getElementById('text-plus1').textContent    = currentResults.plus1;
+                document.getElementById('text-plus5').textContent    = currentResults.plus5;
+
+                (function() {
+                    const orig = extractPrice(currentResults.original);
+                    const p1   = extractPrice(currentResults.plus1);
+                    const p5   = extractPrice(currentResults.plus5);
+                    function deltaLabel(o, a) {
+                        const d = Math.round((a.value - o.value) * 100) / 100;
+                        return (d >= 0 ? '+' : '-') + '$' + Math.abs(d).toFixed(2);
+                    }
+                    if (orig && p1) document.getElementById('tag-plus1').textContent = deltaLabel(orig, p1);
+                    if (orig && p5) document.getElementById('tag-plus5').textContent = deltaLabel(orig, p5);
+                })();
+
+                panel.classList.add('visible');
+                const targetCard = document.querySelector(`.price-card[data-option="${lastSelectedOption}"]`);
+                selectCard(targetCard);
+
+                renderPayoffForOrder(tosFormatted, currentParsed).catch(() => hidePayoffChart());
+
+                const INDEX_TICKERS = new Set(['SPX','SPXW','NDX','RUT','DJX']);
+                const isIndex  = INDEX_TICKERS.has((currentTicker || '').toUpperCase());
+                const showWidget = currentTicker && !isIndex;
+                document.getElementById('btnTVChart').style.display  = currentTicker ? 'block' : 'none';
+                document.getElementById('btnTOSChart').style.display = currentParsed  ? 'block' : 'none';
+                if (showWidget) {
+                    document.getElementById('chartPanel').style.display = 'block';
+                    setTimeout(() => renderChart(currentTicker, currentInterval), 0);
+                } else {
+                    document.getElementById('chartPanel').style.display = 'none';
+                }
+            } catch (e) {
+                errorEl.textContent = 'Error parsing OptionStrat URL: ' + e.message;
+                errorEl.classList.add('visible');
+                panel.classList.remove('visible');
+                hidePayoffChart();
+            }
+            return;
+        }
+        // ── end URL branch ────────────────────────────────────────────────────
+
+        currentOptionStratURL = '';
 
         try {
             const formatted = formatAlert(input);
@@ -1619,6 +1922,10 @@
     }
 
     async function openOptionStrat() {
+        if (currentOptionStratURL) {
+            window.open(currentOptionStratURL, '_blank', 'noopener');
+            return;
+        }
         const selected = document.querySelector('.price-card.selected');
         if (!selected) return;
 
